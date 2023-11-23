@@ -1,0 +1,20 @@
+[css]
+   main.css
+   normalize.css
+[-]
+
+[js]
+   [plugins]
+      [mod]
+         mod.js
+         path.sl
+      [-]
+      [goof]
+      [-]
+   [-]
+   [desktop-example]
+      desktop.jsx
+   [-]
+   cool.jsx
+   main.js
+[-]
