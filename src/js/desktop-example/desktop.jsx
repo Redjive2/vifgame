@@ -1,4 +1,4 @@
-const Desktop = module(exports => {
+const Desktop = module(() => {
     const {
         select,
         interval, timeout,
@@ -25,8 +25,7 @@ const Desktop = module(exports => {
 
     doc.oncontextmenu = ({ preventDefault }) => preventDefault()
 
-    exports.displayContextMenu = displayContextMenu
-    function displayContextMenu(buttons) {
+    @Export function displayContextMenu(buttons) {
         contextMenuOpen = true
         const ctx = select `#contextMenu`
 
@@ -69,8 +68,7 @@ const Desktop = module(exports => {
         }
     })
 
-    exports.openWindowFromObject = openWindowFromObject
-    function openWindowFromObject(object, run) {
+    @Export function openWindowFromObject(object, run) {
         const { name, size, open, color, canOpen } = object
 
         if (type(open) === 'string') {
@@ -84,8 +82,7 @@ const Desktop = module(exports => {
         }
     }
 
-    exports.createWindow = createWindow
-    function createWindow(title, width, height, content, titleColor, icon, canOpen, run) {
+    @Export function createWindow(title, width, height, content, titleColor, icon, canOpen, run) {
         const window = <jsx>
             <div class='window' />
         </jsx>
@@ -167,12 +164,12 @@ const Desktop = module(exports => {
 
         const windowTitle = select.from(window) `.windowTitle`
         let windowMoveInterval,
-            windowClicked = { x: 0, y: 0}
-        pos = { x: 0, y: 0}
-        size = { x: 0, y: 0}
-        windowFullscreen = false
-        windowMoving = false
-        windowMinimized = false
+            windowClicked = { x: 0, y: 0 }
+            pos = { x: 0, y: 0 }
+            size = { x: 0, y: 0 }
+            windowFullscreen = false
+            windowMoving = false
+            windowMinimized = false
 
         const taskbarIcon = <jsx>
             <img
@@ -208,9 +205,6 @@ const Desktop = module(exports => {
                 ])
             }
         }
-
-
-
 
 
         windowTitle.addEventListener('mousedown', ({ button, clientX, clientY }) => {
@@ -292,10 +286,12 @@ const Desktop = module(exports => {
                                 timeout(10 * i, () => {
                                     window.style.scale = '90%'
                                     window.style.opacity = '0'
+
                                     if (windowFullscreen) {
                                         windowsFullscreen--
                                         updateTaskbar()
                                     }
+
                                     timeout(100, () => {
                                         window.remove()
                                         windowsActive--
@@ -450,8 +446,7 @@ const Desktop = module(exports => {
         });
     }
 
-    exports.openApp = openApp
-    function openApp(key) {
+    @Export function openApp(key) {
         const app = key
 
         if (type(app.open) === 'string') {
@@ -461,8 +456,7 @@ const Desktop = module(exports => {
         }
     }
 
-    exports.createNoti = createNoti
-    function createNoti(img, altImg, appName, title, desc, ev) {
+    @Export function createNoti(img, altImg, appName, title, desc, ev) {
         let notiActive = true
 
         const div = <jsx>
@@ -474,7 +468,7 @@ const Desktop = module(exports => {
                 </div>
                 <div class='notiText'>
                     <span class='notiTitle'>${title}</span>
-                    <br/>
+                    <br />
                     <span class='notiDesc'>${desc}</span>
                 </div>
             </div>
@@ -523,8 +517,7 @@ const Desktop = module(exports => {
     let appGalleryOpen = false
     const appGallery = select `#appGallery`
 
-    exports.openAppGallery = openAppGallery
-    function openAppGallery() {
+    @Export function openAppGallery() {
         if (!appGalleryOpen) {
             select `#desktop`.style.scale = '110%'
             select `#taskBar`.style.transform = 'translateY(100px)'
@@ -550,8 +543,7 @@ const Desktop = module(exports => {
 
     const innerAppGallery = select `#innerAppGallery`
 
-    exports.updateAppGallery = updateAppGallery
-    function updateAppGallery() {
+    @Export function updateAppGallery() {
         innerAppGallery.innerHTML = ''
 
         for (const key in apps) {
@@ -583,8 +575,7 @@ const Desktop = module(exports => {
         }
     }
 
-    exports.renderTaskbar = renderTaskbar
-    function renderTaskbar() {
+    @Export function renderTaskbar() {
         select `#taskBarMain`.innerHTML = ''
         for (const app in data.user.taskbar) {
             pinToTaskbar(data.user.taskbar[app])
@@ -600,7 +591,6 @@ const Desktop = module(exports => {
                 on:click={() => openApp(app)}
             />
         </jsx>
-
 
         img.onmouseup = ({ button }) => {
             if (button === 2) {

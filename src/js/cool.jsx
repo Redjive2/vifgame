@@ -1,19 +1,19 @@
-const Cool = module(exports => {
+const Cool = module(() => {
     const { select } = require(Mod)
 
-    function Counter(start, inc) {
+    @Component function Counter(start, increment) {
         let count = start
-
-        function click() {
-            count += inc
+        const epic = function click() {
+            count += increment
+            select.from(this) `button`.textContent = String(count)
         }
 
         return <jsx>
-            <button use:{click}>
-                count is ${count}
+            <button use:{epic}>
+                ${count}
             </button>
         </jsx>
     }
-
-    console.log('loaded cool.jsx')
 })
+
+

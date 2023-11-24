@@ -1,3 +1,8 @@
+/**
+ * @typedef { function } Component
+ * @typedef { function } Export
+ **/
+
 const { Mod, module, require } = (() => {
     const o = {},
         auth = Symbol(),
@@ -586,8 +591,6 @@ const { Mod, module, require } = (() => {
     }
 })();
 
-
-
 (() => {
     async function run(f) {
         await f()
@@ -646,7 +649,7 @@ const { Mod, module, require } = (() => {
 
             let processed = await fetch(file.full)
             processed = await processed.text()
-            processed = processed.replace(/\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+module\s*\(\s*exports\s*=>\s*\{/, 'const $1 = module(exports => {\n    const $__MOD = require(Mod);')
+            processed = processed.replace(/\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+module\s*\(\s*\(\s*\)\s*=>\s*\{/, 'const $1 = module(() => {\n    const $__MOD = require(Mod);')
 
             let out = ''
             if (processed.length > 5000) {
@@ -671,19 +674,45 @@ const { Mod, module, require } = (() => {
 
                 for (const buf of buffers) {
                     out += buf
+                        .replaceAll('module(() => {', 'module(exports => {')
                         .replaceAll('<jsx>', '$__MOD.html`')
                         .replaceAll('</jsx>', '`')
                         .replaceAll(/on:([a-zA-Z\-_]+)=\{/g, `on:$1=\${`)
                         .replaceAll(/use:\{/g, `use:\${`)
                         .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
+                        .replaceAll(
+                            /\n\s*\n(\s*)@Component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
+                            '\n\n$1exports.$2 = $2;\n$1function $2(host) {\n$1  return (...args) => (host.replaceChildren($2_.call(host, ...args)), host)\n$1}\n\n$1function $2_',
+                        )
+                        .replaceAll(
+                            /\n\s*\n(\s*)@Export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
+                            '\n\n$1let $3;\n$1exports.$3 = $3'
+                        )
+                        .replaceAll(
+                            /\n\s*\n(\s*)@Export\s+(function|class)\s+([a-zA-Z_$]+)/g,
+                            '\n\n$1exports.$3 = $3;\n$1$2 $3'
+                        )
                 }
             } else {
                 out = processed
+                    .replaceAll('module(() => {', 'module(exports => {')
                     .replaceAll('<jsx>', '$__MOD.html`')
                     .replaceAll('</jsx>', '`')
                     .replaceAll(/on:([a-zA-Z\-_]+)=\{/g, `on:$1=\${`)
                     .replaceAll(/use:\{/g, `use:\${`)
                     .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
+                    .replaceAll(
+                        /\n\s*\n(\s*)@Component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
+                        '\n\n$1exports.$2 = $2;\n$1function $2(host) {\n$1  return (...args) => (host.replaceChildren($2_.call(host, ...args)), host)\n$1}\n\n$1function $2_',
+                    )
+                    .replaceAll(
+                        /\n\s*\n(\s*)@Export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
+                        '\n\n$1let $3;\n$1exports.$3 = $3'
+                    )
+                    .replaceAll(
+                        /\n\s*\n(\s*)@Export\s+(function|class)\s+([a-zA-Z_$]+)/g,
+                        '\n\n$1exports.$3 = $3;\n$1$2 $3'
+                    )
             }
 
             const temp = new File([`// compiled by SL from source: ${file.full} \n'use strict';\n\n` + out], file.name, {
