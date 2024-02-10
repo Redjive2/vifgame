@@ -1,24 +1,63 @@
-/**
- * @typedef { function } Component
- * @typedef { function } Export
- **/
 
-const { Mod, module, require } = (() => {
+
+/*
+
+GLOBAL EXPORTS:
+
+    module((exports) => void) => Module
+    require(Module) => Record<String, any>
+    main(() => void) => void
+    println(...any) => void
+
+IN MILL:
+
+    run(fn) => void                                                       // runs a function
+
+    timeout(number, () => void) => Timeout                                // setTimeout but better
+    interval(number, () => void) => Interval                              // setInterval but better
+
+    pipe(T, ...(any) => any) => any                                       // pipes a value through a series of transformations
+        pipe.safe(...) => ...                                             // pipe, but early returns on failure
+        pipe.let(...) => ...                                              // pipe, but early returns on null/undefined
+        pipe.let.safe(...) => ...                                         // pipe, but early returns on either
+
+    info(any) => Object                                                   // gives all the following three
+        type(any) => string                                               // typeof, but has special cases for  null, array, and dom nodes
+        exists(any) => boolean                                            // checks if a value is not null and not undefined
+        iterable(any) => boolean                                          // checks if a value is not null and is an object | array
+
+    html `string` => Document.Fragment                                    // returns an html element parsed from html-jsx as a string template
+    html.el `string` => Document.Element                                  // same as html, but only returns first element of the frag
+    html.el.empty(string) => Document.Element                             // returns an html element from document.createElement(string)
+
+    select `string` => Document.Element                                   // literally querySelector
+        select.all `...` => Document.Element[]                            // literally querySelectorAll
+        select.from<.all>(Element | string, ...string)<.all> `...` => ... // literally nested querySelector <All>
+
+    keyof(Object) => string[]                                             // literally Object.keys(Object)
+
+    constant(T) => readonly T                                             // literally Object.freeze(Object) but deep
+
+    equivalent(any, any) => boolean                                       // structurally compares two values
+    matches(any, ...any) => boolean                                       // checks if the first value matches any of the following using ===
+        matches.equivalent(any, ...any) => boolean                        // same as matches, but using structural equality
+*/
+
+const { Mill, module, require, println } = (() => {
     const o = {},
         auth = Symbol(),
         backAuth = Symbol(),
-        schemaAuth = Symbol(),
         modAuth = Symbol();
 
     (exports => {
         (() => {
-            const modReg = new Map
+            const modReg = new Map()
 
             exports.module = module
             function module(f) {
                 const modID = Symbol()
 
-                const load = () => {
+                const load = function() {
                     if (modReg.has(modID)) {
                         return modReg.get(modID)
                     }
@@ -61,49 +100,125 @@ const { Mod, module, require } = (() => {
                 })
             }
 
-            exports.apply = function(...objects) {
-                if (objects.length < 2 || objects.some(it => typeof it !== 'object' || it === null)) {
-                    throw 'unsupported data passed to Mod.spread(...objects)'
+
+            // applies a series of mutator functions onto the result of the previous version, then returns the result
+            exports.pipe = function(start, ...mutators) {
+                if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
+                    throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
                 }
 
-                let r = objects[0]
-                for (const i in objects) {
-                    if (i === 0) {
-                        continue
-                    }
-
-                    for (const j in objects[i]) {
-                        r[j] = objects[i][j]
-                    }
+                let acc = start
+                for (const mut of mutators) {
+                    acc = mut(acc)
                 }
+
+                return acc
             }
+
+            // early returns on null | undefined
+            exports.pipe.let = function(start, ...mutators) {
+                if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
+                    throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
+                }
+
+                let acc = start
+                for (const mut of mutators) {
+                    const res = mut(acc)
+                    if (res === null || res === undefined) {
+                        return acc
+                    }
+
+                    acc = res
+                }
+
+                return acc
+            }
+
+            // early returns on     undefined | null  ||  err
+            exports.pipe.let.safe = function(start, ...mutators) {
+                if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
+                    throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
+                }
+
+                let acc = start
+                for (const mut of mutators) {
+                    let res
+                    try {
+                        res = mut(acc)
+                    } catch (_) {
+                        return acc
+                    }
+
+                    if (res === null || res === undefined) {
+                        return acc
+                    }
+
+                    acc = res
+                }
+
+                return acc
+            }
+
+            // early returns on err
+            exports.pipe.safe = function(start, ...mutators) {
+                if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
+                    throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
+                }
+
+                let acc = start
+                for (const mut of mutators) {
+                    let res
+                    try {
+                        res = mut(acc)
+                    } catch (_) {
+                        return acc
+                    }
+
+                    acc = res
+                }
+
+                return acc
+            }
+
+
+            exports.info = function(val) {
+                return Object.freeze({
+                    type: type(val),
+                    exists: val !== null && val !== undefined,
+                    iterable: typeof val === 'object' && val !== null
+                })
+            }
+
 
             exports.type = type
             function type(val) {
                 if (val === null) {
-                    return 'null'
+                    return 'null';
                 }
 
                 if (Array.isArray(val)) {
-                    return 'array'
+                    return 'array';
                 }
 
-                if (val instanceof HTMLElement) {
-                    return 'element'
+                if (val instanceof Node) {
+                    return 'node';
                 }
 
-                return typeof val
+                if (val instanceof Error) {
+                    return 'error';
+                }
+
+                return typeof val;
             }
 
 
             exports.doc = document
             exports.win = window
 
-
             const domParser = new DOMParser()
             exports.html = function(sts, ...interps) {
                 const rand = String(Math.random())
-                const strings = sts.map(it => it.replace('<>', '<frag>').replace('</>', '</frag>'))
+                const strings = sts
 
                 let htmlString = ''
                 for (const i in strings) {
@@ -136,7 +251,7 @@ const { Mod, module, require } = (() => {
 
                 const html = domParser.parseFromString(htmlString, 'text/html')
 
-                html.querySelectorAll('frag').forEach(frag => {
+                html.querySelectorAll('fragment').forEach(frag => {
                     const docFrag = html.createDocumentFragment()
 
                     const localToAppend = []
@@ -156,6 +271,7 @@ const { Mod, module, require } = (() => {
                     for (const attr of el.attributes) {
                         if (attr.name.startsWith('on:') && attr.value.startsWith(`#_${rand}--`)) {
                             const index = parseInt(attr.value.slice(attr.value.lastIndexOf('-') + 1))
+
                             el.removeAttribute(attr.name)
                             el.addEventListener(attr.name.slice(3), interps[index])
                         }
@@ -167,15 +283,9 @@ const { Mod, module, require } = (() => {
                 }
 
                 const frag = html.createDocumentFragment()
-                let toAppend = []
 
-                for (const key in Object.keys(html.body.childNodes)) {
-                    const node = html.body.childNodes[key]
-                    toAppend.push(node)
-                }
-
-                for (const node of toAppend) {
-                    frag.append(node)
+                for (let i = html.body.childNodes.length - 1; i >= 0; i--) {
+                    frag.prepend(html.body.childNodes[i])
                 }
 
                 for (const child of frag.children) {
@@ -183,6 +293,22 @@ const { Mod, module, require } = (() => {
                 }
 
                 return frag
+            }
+
+
+
+            exports.html.el = function(string, ...interps) {
+                const html = exports.html(string, ...interps)
+
+                if (html.children.length !== 1) {
+                    throw 'template string passed to Mod.html.el must generate 1 element'
+                }
+
+                return html.firstChild
+            }
+
+            exports.html.el.empty = function(string) {
+                return document.createElement(string)
             }
 
 
@@ -208,7 +334,7 @@ const { Mod, module, require } = (() => {
                 for (const key in args) {
                     const arg = args[key]
 
-                    if (key === 0 && type(arg) === 'element') {
+                    if (key === 0 && type(arg) === 'node') {
                         el = arg
                     } else if (type(arg) === 'string') {
                         el = el.querySelector(arg)
@@ -253,7 +379,7 @@ const { Mod, module, require } = (() => {
                 for (const key in args) {
                     const arg = args[key]
 
-                    if (key === 0 && type(arg) === 'element') {
+                    if (key === 0 && type(arg) === 'node') {
                         els = [arg]
                     } else if (type(arg) === 'string') {
                         const r = []
@@ -310,7 +436,7 @@ const { Mod, module, require } = (() => {
 
             // returns all children matching the given query
             exports.select.all = function(strings, ...interps) {
-                if (type(strings) === 'element' && interps.length === 0) {
+                if (type(strings) === 'node' && interps.length === 0) {
                     return function(st, ...int) {
                         let s = ''
                         for (const i in st) {
@@ -338,8 +464,7 @@ const { Mod, module, require } = (() => {
 
                 return document.querySelectorAll(s)
             }
-
-
+            
 
             function unpack(box) {
                 if (!(
@@ -355,23 +480,6 @@ const { Mod, module, require } = (() => {
                     return res
                 } else {
                     throw 'Invalid credentials in box passed to (private) Mod.unpack(box)'
-                }
-            }
-
-            function unpackSchema(box) {
-                if (!(
-                    type(box) === 'object' &&
-                    '#__unpack' in box
-                )) {
-                    throw 'Unsupported box type passed to (private) Mod.unpackSchema(box)'
-                }
-
-                const [sa, res] = box['#__unpack'](auth)
-
-                if (sa === schemaAuth) {
-                    return res
-                } else {
-                    throw 'Invalid credentials in box passed to (private) Mod.unpackSchema(box)'
                 }
             }
 
@@ -401,10 +509,6 @@ const { Mod, module, require } = (() => {
             const iterable = val => ((typeof val === 'object') && (!!val))
             exports.iterable = iterable
 
-            exports.boolean = val => !!val
-            exports.number = val => +val
-            exports.string = val => `${val}`
-
             exports.keyof = function(o) {
                 if (typeof o !== 'object') {
                     throw 'invalid type `' + type(o) + '` provided to Mod.keyof(o)'
@@ -414,8 +518,6 @@ const { Mod, module, require } = (() => {
             }
 
             exports.constant = function(val) {
-                const res = structuredClone(val)
-
                 function constify(v) {
                     if (type(v) === 'object' || type(v) === 'array') {
                         for (const k in v) {
@@ -426,11 +528,13 @@ const { Mod, module, require } = (() => {
                     Object.freeze(v)
                 }
 
-                constify(res)
-                return res
+                constify(val)
+                return val
             }
 
-            exports.equivalent = function(left, right) {
+
+            exports.equivalent = equivalent
+            function equivalent(left, right) {
                 function eq(a, b) {
                     if (type(a) !== type(b)) {
                         return false
@@ -470,81 +574,14 @@ const { Mod, module, require } = (() => {
                 return eq(left, right)
             }
 
-            const vt = {}
-            exports.vt = vt
-            vt.schema = schema
-            function schema(template) {
-                return {
-                    '#__unpack'(a) {
-                        if (a === auth) {
-                            return [schemaAuth, template]
-                        } else {
-                            throw 'Unauthorized attempt to unpack vt template'
-                        }
-                    }
-                }
+
+            exports.matches = matches
+            function matches(left, ...right) {
+                return right.includes(left)
             }
 
-            function createSchemaType(val) {
-                return {
-                    '#__unpack'(a) {
-                        if (a === auth) {
-                            return [backAuth, val]
-                        } else {
-                            throw 'Unauthorized attempt to unpack vt type'
-                        }
-                    }
-                }
-            }
-
-            const $ = {}
-            // results of `type(...)`
-            $.string = createSchemaType('string')
-            $.number = createSchemaType('number')
-            $.bigint = createSchemaType('bigint')
-            $.symbol = createSchemaType('symbol')
-            $.null = createSchemaType('null')
-            $.undefined = createSchemaType('undefined')
-            $.array = createSchemaType('array')
-            $.object = createSchemaType('object')
-            $.element = createSchemaType('element')
-            // special types
-            $.integer = createSchemaType('integer')
-            $.any = createSchemaType('Any')
-            // compound types
-            $.Union = (...types) => createSchemaType('(Union::' + types.map(it => tryUnpack(it)).join('|') + ')')
-            $.Record = (type) => createSchemaType('(Record::' + tryUnpack(type) + ')')
-            $.Array = (type) => createSchemaType('(Array::' + tryUnpack(type) + ')')
-            $.Rest = (type) => createSchemaType('(Rest::' + tryUnpack(type) + ')')
-
-            function tryUnpack(maybeBox) {
-                if (type(maybeBox) !== 'object' || !('#__unpack' in maybeBox)) {
-                    return maybeBox
-                }
-
-                return unpack(maybeBox)
-            }
-
-
-
-            vt.$ = $
-
-            // schema($.string)  |  schema({ cool: $.string })  |  schema([$.string])  |  schema($.Array($.string))
-            vt.parse = function(template, target) {
-                function p(temp, targ) {
-                    if (type)
-
-                    if (type(temp) !== type(targ)) {
-                        return false
-                    }
-                }
-
-                return p(template, target)
-            }
-
-            // template or vt-type
-            vt.stringify = function(item) {
-
+            matches.equivalent = function(left, ...right) {
+                return right.some(it => equivalent(left, it))
             }
         })()
 
@@ -561,7 +598,7 @@ const { Mod, module, require } = (() => {
     }
 
     return {
-        Mod: {
+        Mill: {
             '#__unpack'(a) {
                 if (a === auth) {
                     return [modAuth, r]
@@ -587,6 +624,14 @@ const { Mod, module, require } = (() => {
             }
 
             return r
+        },
+
+        main(f) {
+            f()
+        },
+
+        println(...values) {
+            console.log(...values)
         }
     }
 })();
@@ -598,7 +643,7 @@ const { Mod, module, require } = (() => {
 
     run(async() => {
         const thisPath = document
-            .querySelector('script[src$="mod.js"]')
+            .querySelector('script[src$="mill.js"]')
             .getAttribute('src')
 
         const slPath = thisPath.slice(0, thisPath.lastIndexOf('/') + 1) + 'path.sl'
@@ -610,7 +655,7 @@ const { Mod, module, require } = (() => {
         function parseSl(sl) {
             const lines = sl.split('\n').map(it => it.trim()).filter(it => it.trim() !== '')
 
-            const truncated = []
+            const full = []
             const paths = []
             for (const line of lines) {
                 if (line === '[-]') {
@@ -635,11 +680,11 @@ const { Mod, module, require } = (() => {
                         )
                     }
 
-                    truncated.push(res)
+                    full.push(res)
                 }
             }
 
-            return truncated
+            return full
         }
 
 
@@ -649,7 +694,7 @@ const { Mod, module, require } = (() => {
 
             let processed = await fetch(file.full)
             processed = await processed.text()
-            processed = processed.replace(/\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+module\s*\(\s*\(\s*\)\s*=>\s*\{/, 'const $1 = module(() => {\n    const $__MOD = require(Mod);')
+            processed = processed.replace(/\s*@module\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+\s*\(\s*\(\s*\)\s*=>\s*\{/, 'const $1 = module(exports => {\n    const $__MILL = require(Mill);')
 
             let out = ''
             if (processed.length > 5000) {
@@ -672,47 +717,59 @@ const { Mod, module, require } = (() => {
 
                 buffers = buffers.filter(it => it.length > 0).map(it => it.join('\n'))
 
-                for (const buf of buffers) {
-                    out += buf
+                let CUUID = 0;
+
+                function translateJSX(jsx) {
+                    const final = jsx
                         .replaceAll('module(() => {', 'module(exports => {')
-                        .replaceAll('<jsx>', '$__MOD.html`')
-                        .replaceAll('</jsx>', '`')
-                        .replaceAll(/on:([a-zA-Z\-_]+)=\{/g, `on:$1=\${`)
-                        .replaceAll(/use:\{/g, `use:\${`)
+                        .replaceAll('<>', '$__MILL.html`')
+                        .replaceAll('</>', '`')
                         .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
                         .replaceAll(
-                            /\n\s*\n(\s*)@Component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
-                            '\n\n$1exports.$2 = $2;\n$1function $2(host) {\n$1  return (...args) => (host.replaceChildren($2_.call(host, ...args)), host)\n$1}\n\n$1function $2_',
+                            /\n\s*\n(\s*)@component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
+                            '\n\n$1exports.$2 = $2;\n$1function $2(...args) {\n$1    const e = document.createElement("div")\n$1    e.replaceChildren($2_.call(e, [], ...args))\n$1    return e\n$1}\n\n$1function $2_($__POST,',
                         )
                         .replaceAll(
-                            /\n\s*\n(\s*)@Export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
+                            /\n\s*\n(\s*)@export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
                             '\n\n$1let $3;\n$1exports.$3 = $3'
                         )
                         .replaceAll(
-                            /\n\s*\n(\s*)@Export\s+(function|class)\s+([a-zA-Z_$]+)/g,
+                            /\n\s*\n(\s*)@export\s+(function|class)\s+([a-zA-Z_$]+)/g,
                             '\n\n$1exports.$3 = $3;\n$1$2 $3'
                         )
+                        .replaceAll(
+                            /@from\(([a-zA-Z_$]+)\)\s*let\s*([a-zA-Z_$]+)(,\s*[a-zA-Z_$]+\s*)*;?/g,
+                            (_, source, first, rest) => 'const {' + first + (rest ?? '') + '} = require(' + source + ');'
+                        )
+                        .replaceAll(
+                            /@module\s+const\s+([a-zA-Z_$]+)\s*=\s*\(\s*\(\s*\)\s*=>\s*\{/g,
+                            'const $1 = module(exports => '
+                        )
+                        .replaceAll(
+                            /@handle\('([a-zA-Z_$]+)'\) function ([a-zA-Z_$]+)/g,
+                            'const $2 = function $1'
+                        )
+                        .replaceAll(
+                            /<port\s*content=\$\{([a-zA-Z$_]+)}\s*\/>/g,
+                            (_, capture) => `<div _c-uuid="${++CUUID}">\n`+
+                                `   \${\n`+
+                                `        this.querySelector('div[_c-uuid="${CUUID}"]').append(${capture}), ''\n`+
+                                `    }\n`+
+                            `</div>`
+                        )
+                        .replaceAll(
+                            /@defer \s+function\s+([a-zA-Z_$]+)\s*\(\s*\)\s*\{]/g,
+                            '$__POST.push($1); function $1() {'
+                        )
+
+                    return final
+                }
+
+                for (const buffer of buffers) {
+                    out += translateJSX(buffer)
                 }
             } else {
-                out = processed
-                    .replaceAll('module(() => {', 'module(exports => {')
-                    .replaceAll('<jsx>', '$__MOD.html`')
-                    .replaceAll('</jsx>', '`')
-                    .replaceAll(/on:([a-zA-Z\-_]+)=\{/g, `on:$1=\${`)
-                    .replaceAll(/use:\{/g, `use:\${`)
-                    .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
-                    .replaceAll(
-                        /\n\s*\n(\s*)@Component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
-                        '\n\n$1exports.$2 = $2;\n$1function $2(host) {\n$1  return (...args) => (host.replaceChildren($2_.call(host, ...args)), host)\n$1}\n\n$1function $2_',
-                    )
-                    .replaceAll(
-                        /\n\s*\n(\s*)@Export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
-                        '\n\n$1let $3;\n$1exports.$3 = $3'
-                    )
-                    .replaceAll(
-                        /\n\s*\n(\s*)@Export\s+(function|class)\s+([a-zA-Z_$]+)/g,
-                        '\n\n$1exports.$3 = $3;\n$1$2 $3'
-                    )
+                out = translateJSX(processed)
             }
 
             const temp = new File([`// compiled by SL from source: ${file.full} \n'use strict';\n\n` + out], file.name, {
@@ -726,7 +783,7 @@ const { Mod, module, require } = (() => {
         }
 
 
-        for (const file of files.filter(it => it.type === 'js' && it.name !== 'mod')) {
+        for (const file of files.filter(it => it.type === 'js' && it.name !== 'mill')) {
             const host = document.createElement('script')
             host.setAttribute('type', 'text/javascript')
             host.setAttribute('src', file.full)
@@ -742,7 +799,5 @@ const { Mod, module, require } = (() => {
 
             document.head.append(host)
         }
-
-        //document.body.innerHTML = `${files.filter(it => it.type === 'js').map(it => `<script src="${it.full}"></script>`).join('\n')}\n\n${document.body.innerHTML}`
     })
 })()
