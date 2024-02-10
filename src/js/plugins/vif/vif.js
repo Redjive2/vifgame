@@ -9,7 +9,7 @@ GLOBAL EXPORTS:
     main(() => void) => void
     println(...any) => void
 
-IN MILL:
+IN VIF:
 
     run(fn) => void                                                       // runs a function
 
@@ -43,7 +43,7 @@ IN MILL:
         matches.equivalent(any, ...any) => boolean                        // same as matches, but using structural equality
 */
 
-const { Mill, module, require, println } = (() => {
+const { Vif, module, require, println } = (() => {
     const o = {},
         auth = Symbol(),
         backAuth = Symbol(),
@@ -464,7 +464,7 @@ const { Mill, module, require, println } = (() => {
 
                 return document.querySelectorAll(s)
             }
-            
+
 
             function unpack(box) {
                 if (!(
@@ -598,7 +598,7 @@ const { Mill, module, require, println } = (() => {
     }
 
     return {
-        Mill: {
+        Vif: {
             '#__unpack'(a) {
                 if (a === auth) {
                     return [modAuth, r]
@@ -626,10 +626,6 @@ const { Mill, module, require, println } = (() => {
             return r
         },
 
-        main(f) {
-            f()
-        },
-
         println(...values) {
             console.log(...values)
         }
@@ -643,7 +639,7 @@ const { Mill, module, require, println } = (() => {
 
     run(async() => {
         const thisPath = document
-            .querySelector('script[src$="mill.js"]')
+            .querySelector('script[src$="vif.js"]')
             .getAttribute('src')
 
         const slPath = thisPath.slice(0, thisPath.lastIndexOf('/') + 1) + 'path.sl'
@@ -694,9 +690,36 @@ const { Mill, module, require, println } = (() => {
 
             let processed = await fetch(file.full)
             processed = await processed.text()
-            processed = processed.replace(/\s*@module\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+\s*\(\s*\(\s*\)\s*=>\s*\{/, 'const $1 = module(exports => {\n    const $__MILL = require(Mill);')
+            processed = processed.replaceAll(/\s*@module\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+\s*\(\s*\(\s*\)\s*=>\s*\{/g, 'const $1 = module(exports => {\n    const $__VIF = require(Vif);')
 
             let out = ''
+
+            function translateJSX(jsx) {
+                const final = jsx
+                    .replaceAll('module(() => {', 'module(exports => {')
+                    .replaceAll('<>', '$__VIF.html`')
+                    .replaceAll('</>', '`')
+                    .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
+                    .replaceAll(
+                        /\n\s*\n(\s*)@export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
+                        '\n\n$1let $3;\n$1exports.$3 = $3'
+                    )
+                    .replaceAll(
+                        /(\s*)@export\s+(function|class)\s+([a-zA-Z_$]+)/g,
+                        '$1exports.$3 = $3;\n$1$2 $3'
+                    )
+                    .replaceAll(
+                        /@import\(([a-zA-Z_$]+)\)\s*let\s*([a-zA-Z_$]+)(,\s*[a-zA-Z_$]+\s*)*;?/g,
+                        (_, source, first, rest) => 'const {' + first + (rest ?? '') + '} = require(' + source + ');'
+                    )
+                    .replaceAll(
+                        /@module\s+const\s+([a-zA-Z_$]+)\s*= \s*\(\s*\)\s*=>\s*\{/g,
+                        'const $1 = module(__$1); function __$1(exports) { '
+                    )
+
+                return final
+            }
+
             if (processed.length > 5000) {
                 const lines = processed.split('\n')
 
@@ -719,52 +742,6 @@ const { Mill, module, require, println } = (() => {
 
                 let CUUID = 0;
 
-                function translateJSX(jsx) {
-                    const final = jsx
-                        .replaceAll('module(() => {', 'module(exports => {')
-                        .replaceAll('<>', '$__MILL.html`')
-                        .replaceAll('</>', '`')
-                        .replaceAll(/([A-Za-z\-]+)=\{/g, `$1=\${`)
-                        .replaceAll(
-                            /\n\s*\n(\s*)@component\s+function\s+([A-Z][a-zA-Z_$]+)/g,
-                            '\n\n$1exports.$2 = $2;\n$1function $2(...args) {\n$1    const e = document.createElement("div")\n$1    e.replaceChildren($2_.call(e, [], ...args))\n$1    return e\n$1}\n\n$1function $2_($__POST,',
-                        )
-                        .replaceAll(
-                            /\n\s*\n(\s*)@export\s+(const|let|var)\s+([a-zA-Z_$]+)/g,
-                            '\n\n$1let $3;\n$1exports.$3 = $3'
-                        )
-                        .replaceAll(
-                            /\n\s*\n(\s*)@export\s+(function|class)\s+([a-zA-Z_$]+)/g,
-                            '\n\n$1exports.$3 = $3;\n$1$2 $3'
-                        )
-                        .replaceAll(
-                            /@from\(([a-zA-Z_$]+)\)\s*let\s*([a-zA-Z_$]+)(,\s*[a-zA-Z_$]+\s*)*;?/g,
-                            (_, source, first, rest) => 'const {' + first + (rest ?? '') + '} = require(' + source + ');'
-                        )
-                        .replaceAll(
-                            /@module\s+const\s+([a-zA-Z_$]+)\s*=\s*\(\s*\(\s*\)\s*=>\s*\{/g,
-                            'const $1 = module(exports => '
-                        )
-                        .replaceAll(
-                            /@handle\('([a-zA-Z_$]+)'\) function ([a-zA-Z_$]+)/g,
-                            'const $2 = function $1'
-                        )
-                        .replaceAll(
-                            /<port\s*content=\$\{([a-zA-Z$_]+)}\s*\/>/g,
-                            (_, capture) => `<div _c-uuid="${++CUUID}">\n`+
-                                `   \${\n`+
-                                `        this.querySelector('div[_c-uuid="${CUUID}"]').append(${capture}), ''\n`+
-                                `    }\n`+
-                            `</div>`
-                        )
-                        .replaceAll(
-                            /@defer \s+function\s+([a-zA-Z_$]+)\s*\(\s*\)\s*\{]/g,
-                            '$__POST.push($1); function $1() {'
-                        )
-
-                    return final
-                }
-
                 for (const buffer of buffers) {
                     out += translateJSX(buffer)
                 }
@@ -783,7 +760,7 @@ const { Mill, module, require, println } = (() => {
         }
 
 
-        for (const file of files.filter(it => it.type === 'js' && it.name !== 'mill')) {
+        for (const file of files.filter(it => it.type === 'js' && it.name !== 'vif')) {
             const host = document.createElement('script')
             host.setAttribute('type', 'text/javascript')
             host.setAttribute('src', file.full)
@@ -799,5 +776,31 @@ const { Mill, module, require, println } = (() => {
 
             document.head.append(host)
         }
+
+        setTimeout(() => {
+            const onLoad = `
+            (async() => {
+                let main
+
+                try {
+                    main = require(Main)
+                } catch (_) {
+                    throw 'VIF/SL: no module "main" found in path.sl provided files'
+                }
+
+                try {
+                    main.main()
+                } catch (_) {
+                    throw 'VIF/SL: no function "main" found in module "main" in path.sl provided files'
+                }
+            })()
+            `
+
+            const host = document.createElement('script')
+            host.setAttribute('type', 'text/javascript')
+            host.textContent = onLoad
+
+            document.body.append(host)
+        }, 200)
     })
-})()
+})();

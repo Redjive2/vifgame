@@ -6,7 +6,7 @@
 [js]
    [plugins]
       [mill]
-         mill.js
+         vif.js
          path.sl
       [-]
    [-]
