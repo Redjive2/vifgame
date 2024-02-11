@@ -10,5 +10,6 @@
          path.sl
       [-]
    [-]
+   components.jsx
    main.jsx
 [-]

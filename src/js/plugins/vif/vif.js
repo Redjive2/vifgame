@@ -10,6 +10,8 @@ GLOBAL EXPORTS:
     println(...any) => void
 
 IN VIF:
+    query(string)                                                         // just querySelector
+        queryAll(string)                                                  // just querySelectorAll
 
     run(fn) => void                                                       // runs a function
 
@@ -18,8 +20,7 @@ IN VIF:
 
     pipe(T, ...(any) => any) => any                                       // pipes a value through a series of transformations
         pipe.safe(...) => ...                                             // pipe, but early returns on failure
-        pipe.let(...) => ...                                              // pipe, but early returns on null/undefined
-        pipe.let.safe(...) => ...                                         // pipe, but early returns on either
+        pipe.opt(...) => ...                                              // pipe, but early returns on null/undefined
 
     info(any) => Object                                                   // gives all the following three
         type(any) => string                                               // typeof, but has special cases for  null, array, and dom nodes
@@ -28,11 +29,6 @@ IN VIF:
 
     html `string` => Document.Fragment                                    // returns an html element parsed from html-jsx as a string template
     html.el `string` => Document.Element                                  // same as html, but only returns first element of the frag
-    html.el.empty(string) => Document.Element                             // returns an html element from document.createElement(string)
-
-    select `string` => Document.Element                                   // literally querySelector
-        select.all `...` => Document.Element[]                            // literally querySelectorAll
-        select.from<.all>(Element | string, ...string)<.all> `...` => ... // literally nested querySelector <All>
 
     keyof(Object) => string[]                                             // literally Object.keys(Object)
 
@@ -41,6 +37,7 @@ IN VIF:
     equivalent(any, any) => boolean                                       // structurally compares two values
     matches(any, ...any) => boolean                                       // checks if the first value matches any of the following using ===
         matches.equivalent(any, ...any) => boolean                        // same as matches, but using structural equality
+
 */
 
 const { Vif, module, require, println } = (() => {
@@ -80,6 +77,22 @@ const { Vif, module, require, println } = (() => {
                 })
             }
 
+            exports.query = function(first, ...rest) {
+                let cur
+
+                if (typeof first !== "string") {
+                    cur = first.querySelector(rest.shift())
+                } else {
+                    cur = document.querySelector(first)
+                }
+
+                for (const query of rest) {
+                    cur = cur.querySelector(query)
+                }
+
+                return cur
+            }
+
             exports.run = function run(f) {
                 return f()
             }
@@ -116,7 +129,7 @@ const { Vif, module, require, println } = (() => {
             }
 
             // early returns on null | undefined
-            exports.pipe.let = function(start, ...mutators) {
+            exports.pipe.opt = function(start, ...mutators) {
                 if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
                     throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
                 }
@@ -124,31 +137,6 @@ const { Vif, module, require, println } = (() => {
                 let acc = start
                 for (const mut of mutators) {
                     const res = mut(acc)
-                    if (res === null || res === undefined) {
-                        return acc
-                    }
-
-                    acc = res
-                }
-
-                return acc
-            }
-
-            // early returns on     undefined | null  ||  err
-            exports.pipe.let.safe = function(start, ...mutators) {
-                if (mutators.length === 0 || mutators.some(it => typeof it !== 'function')) {
-                    throw 'unsupported data passed to Mod.pipe.apply(ref, ...mutations)'
-                }
-
-                let acc = start
-                for (const mut of mutators) {
-                    let res
-                    try {
-                        res = mut(acc)
-                    } catch (_) {
-                        return acc
-                    }
-
                     if (res === null || res === undefined) {
                         return acc
                     }
@@ -305,164 +293,6 @@ const { Vif, module, require, println } = (() => {
                 }
 
                 return html.firstChild
-            }
-
-            exports.html.el.empty = function(string) {
-                return document.createElement(string)
-            }
-
-
-            // returns the first child matching the given query
-            exports.select = function(strings, ...interps) {
-                let s = ''
-                for (const i in strings) {
-                    s += strings[i]
-                    if (i in interps) {
-                        s += interps[i]
-                    } else {
-                        break
-                    }
-                }
-
-                return document.querySelector(s)
-            }
-
-            // narrows the returned select function onto the first valid child of the query list
-            exports.select.from = function(...args) {
-                let el = document
-
-                for (const key in args) {
-                    const arg = args[key]
-
-                    if (key === 0 && type(arg) === 'node') {
-                        el = arg
-                    } else if (type(arg) === 'string') {
-                        el = el.querySelector(arg)
-                    }
-                }
-
-                const f = function(st, ...int) {
-                    let s = ''
-                    for (const i in st) {
-                        s += st[i]
-                        if (i in int) {
-                            s += int[i]
-                        } else {
-                            break
-                        }
-                    }
-
-                    return el.querySelector(s)
-                }
-
-                f.all = function(st, ...int) {
-                    let s = ''
-                    for (const i in st) {
-                        s += st[i]
-                        if (i in int) {
-                            s += int[i]
-                        } else {
-                            break
-                        }
-                    }
-
-                    return el.querySelectorAll(s)
-                }
-
-                return f
-            }
-
-            // narrows the returned select function onto all valid children of the query list
-            exports.select.from.all = function(...args) {
-                let els = document
-
-                for (const key in args) {
-                    const arg = args[key]
-
-                    if (key === 0 && type(arg) === 'node') {
-                        els = [arg]
-                    } else if (type(arg) === 'string') {
-                        const r = []
-                        for (const el of els) {
-                            for (const res of el.querySelectorAll(arg)) {
-                                r.push(res)
-                            }
-                        }
-
-                        els = r
-                    }
-                }
-
-                const f = function(st, ...int) {
-                    let s = ''
-                    for (const i in st) {
-                        s += st[i]
-                        if (i in int) {
-                            s += int[i]
-                        } else {
-                            break
-                        }
-                    }
-
-                    const r = []
-                    for (const el of els) {
-                        r.push(el.querySelector(s))
-                    }
-
-                    return r
-                }
-
-                f.all = function(st, ...int) {
-                    let s = ''
-                    for (const i in st) {
-                        s += st[i]
-                        if (i in int) {
-                            s += int[i]
-                        } else {
-                            break
-                        }
-                    }
-
-                    const r = []
-                    for (const el of els) {
-                        r.push(el.querySelectorAll(s))
-                    }
-
-                    return r
-                }
-
-                return f
-            }
-
-            // returns all children matching the given query
-            exports.select.all = function(strings, ...interps) {
-                if (type(strings) === 'node' && interps.length === 0) {
-                    return function(st, ...int) {
-                        let s = ''
-                        for (const i in st) {
-                            s += st[i]
-                            if (i in int) {
-                                s += int[i]
-                            } else {
-                                break
-                            }
-                        }
-
-                        return strings.querySelectorAll(s)
-                    }
-                }
-
-                let s = ''
-                for (const i in strings) {
-                    s += strings[i]
-                    if (i in interps) {
-                        s += interps[i]
-                    } else {
-                        break
-                    }
-                }
-
-                return document.querySelectorAll(s)
             }
 
 
@@ -690,12 +520,11 @@ const { Vif, module, require, println } = (() => {
 
             let processed = await fetch(file.full)
             processed = await processed.text()
-            processed = processed.replaceAll(/\s*@module\s*const\s+([A-Z][a-zA-Z_$]+)\s+=\s+\s*\(\s*\(\s*\)\s*=>\s*\{/g, 'const $1 = module(exports => {\n    const $__VIF = require(Vif);')
 
             let out = ''
 
             function translateJSX(jsx) {
-                const final = jsx
+                let final = jsx
                     .replaceAll('module(() => {', 'module(exports => {')
                     .replaceAll('<>', '$__VIF.html`')
                     .replaceAll('</>', '`')
@@ -713,11 +542,34 @@ const { Vif, module, require, println } = (() => {
                         (_, source, first, rest) => 'const {' + first + (rest ?? '') + '} = require(' + source + ');'
                     )
                     .replaceAll(
-                        /@module\s+const\s+([a-zA-Z_$]+)\s*= \s*\(\s*\)\s*=>\s*\{/g,
-                        'const $1 = module(__$1); function __$1(exports) { '
+                        /@module\s+const\s+([a-zA-Z_$]+)\s*=\s*\(\s*\)\s*=>\s*\{/g,
+                        'const $1 = module(__$1); function __$1(exports) { const $__VIF = require(Vif); '
                     )
+                    .replaceAll(/@auto\s+constructor\s*\(\s*\)\s*;/g, `constructor() {
+        super();
+        this.internals = this.attachInternals();
+        this.shadow = this.attachShadow({mode:"open"});
+        for (const key of Object.getOwnPropertyNames(this.__proto__)) {
+            if (key.startsWith('w__')) {
+                this[key]();
+            }
+        }
+        if ("__vifInit" in this) this.__vifInit();
+    }`)
+                    .replaceAll(/@handle\s+init\s*\(\s*\)\s*\{/g, '__vifInit() {')
+                    .replaceAll(/@handle\s+([a-zA-Z_$]+)/g, '$1Callback')
 
-                return final
+                let names = []
+
+                final = final.replaceAll(/@component\s+class\s+([A-Z][a-zA-Z_$]*)\s*\{/g, (_, name) => {
+                    const elName = name.replaceAll(/([A-Z])/g, it => '-' + it.toLowerCase()).slice(1)
+                    names.push([name, elName])
+                    return 'exports.' + name + ' = class extends HTMLElement {'
+                })
+
+                final = final.replaceAll(/@\$\s+([a-zA-Z_$]+)\s*=/g, '__$1_l=[];get $1(){return this.__$1};set $1(v){this.__$1=v;for(const l of this.__$1_l){l.call(this)}}\n__$1 =')
+                    .replaceAll(/@watch\s*\(\s*this.([a-zA-Z_$]+)\)\s*([a-zA-Z_$]+)\s*\(\s*\)\s*\{/g, 'w__$2() { if(!(this.__$1_l.includes(this.w__$2))) {this.__$1_l.push(this.w__$2); return}')
+                return final + `;(() => { ` + (names.length > 0 ? `const {${names.map(it => it[0]).join(', ')}} = require(Components); ` : '') + `${names.map(([name, elName]) => 'customElements.define("' + elName + '", ' + name + ');').join(' ')} })();`
             }
 
             if (processed.length > 5000) {
@@ -783,15 +635,27 @@ const { Vif, module, require, println } = (() => {
                 let main
 
                 try {
+                    require(Components)
+                } catch (_) {}
+
+                try {
                     main = require(Main)
-                } catch (_) {
-                    throw 'VIF/SL: no module "main" found in path.sl provided files'
+                } catch (e) {
+                    if (e instanceof ReferenceError) {
+                        throw 'VIF/SL: no module "main" found in path.sl provided files'
+                    } else {
+                        throw e
+                    }
                 }
 
                 try {
                     main.main()
-                } catch (_) {
-                    throw 'VIF/SL: no function "main" found in module "main" in path.sl provided files'
+                } catch (e) {
+                    if (e instanceof ReferenceError) {
+                        throw 'VIF/SL: no function "main" found in module "main" in path.sl provided files'
+                    } else {
+                        throw e
+                    }
                 }
             })()
             `
@@ -801,6 +665,6 @@ const { Vif, module, require, println } = (() => {
             host.textContent = onLoad
 
             document.body.append(host)
-        }, 200)
+        }, 125)
     })
 })();
